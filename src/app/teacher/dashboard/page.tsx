@@ -1,435 +1,685 @@
 "use client";
 
-import {
-  ArrowUpRight,
-  BookOpen,
-  CalendarDays,
-  CheckCircle2,
-  ClipboardCheck,
-  Clock3,
-  FileCheck2,
-  FileText,
-  GraduationCap,
-  Users,
-} from "lucide-react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Users,
+  BookOpen,
+  FileText,
+  ClipboardCheck,
+  GraduationCap,
+  CalendarDays,
+  Clock,
+  ArrowUpRight,
+  RefreshCw,
+} from "lucide-react";
 
-const stats = [
-  {
-    title: "Total Students",
-    value: "248",
-    change: "+12",
-    description: "from last semester",
-    icon: Users,
-  },
-  {
-    title: "My Subjects",
-    value: "6",
-    change: "Active",
-    description: "subjects assigned",
-    icon: BookOpen,
-  },
-  {
-    title: "Assignments",
-    value: "18",
-    change: "+5",
-    description: "created this semester",
-    icon: FileText,
-  },
-  {
-    title: "Attendance",
-    value: "92.4%",
-    change: "+2.4%",
-    description: "average attendance",
-    icon: ClipboardCheck,
-  },
-];
+import { createClient } from "@/lib/supabase/client";
 
-const assignments = [
-  {
-    title: "Data Structures Assignment",
-    subject: "Data Structures",
-    submissions: "42 / 48 submitted",
-    status: "Active",
-    icon: FileText,
-  },
-  {
-    title: "Database Management Task",
-    subject: "Database Management",
-    submissions: "38 / 45 submitted",
-    status: "Active",
-    icon: FileText,
-  },
-  {
-    title: "Web Development Project",
-    subject: "Web Technologies",
-    submissions: "31 / 40 submitted",
-    status: "Review",
-    icon: FileCheck2,
-  },
-];
+interface DashboardStats {
+  students: number;
+  subjects: number;
+  assignments: number;
+  attendance: number;
+  exams: number;
+}
 
-const schedule = [
-  {
-    time: "09:00 AM",
-    subject: "Data Structures",
-    className: "CSE - A",
-    room: "Room 204",
-  },
-  {
-    time: "11:00 AM",
-    subject: "Database Management",
-    className: "CSE - B",
-    room: "Lab 3",
-  },
-  {
-    time: "02:00 PM",
-    subject: "Web Technologies",
-    className: "IT - A",
-    room: "Room 105",
-  },
-];
+interface Assignment {
+  id: string;
+  title: string;
+  due_date: string | null;
+  subject_id: string;
+}
+
+interface Subject {
+  id: string;
+  subject_name: string;
+  subject_code: string;
+}
 
 export default function TeacherDashboard() {
   const router = useRouter();
 
-  return (
-    <main className="min-h-[calc(100vh-82px)] bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-        {/* Welcome banner */}
-        <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 p-7 text-white shadow-xl shadow-indigo-200/60 sm:p-9">
-          <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10" />
-          <div className="absolute -bottom-32 right-48 h-64 w-64 rounded-full bg-white/5" />
-          <div className="absolute right-12 top-10 hidden h-36 w-36 items-center justify-center rounded-[32px] border border-white/10 bg-white/10 backdrop-blur md:flex">
-            <GraduationCap className="h-20 w-20 text-white/90" />
-          </div>
+  const [stats, setStats] = useState<DashboardStats>({
+    students: 0,
+    subjects: 0,
+    assignments: 0,
+    attendance: 0,
+    exams: 0,
+  });
 
-          <div className="relative z-10 max-w-3xl">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold backdrop-blur">
-              <span className="h-2 w-2 rounded-full bg-emerald-300" />
-              Academic Year 2026–27
-            </div>
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
 
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl lg:text-5xl">
-              Good morning, Teacher! 👋
-            </h1>
+  const [teacherName, setTeacherName] = useState("Teacher");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-            <p className="mt-4 max-w-2xl text-sm leading-6 text-indigo-100 sm:text-base">
-              Welcome back to your teaching workspace. Here&apos;s an overview
-              of your academic activities and today&apos;s schedule.
-            </p>
-          </div>
-        </section>
+  const supabase = createClient();
 
-        {/* Statistics */}
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {stats.map((stat) => {
-            const Icon = stat.icon;
+  const loadDashboard = async () => {
+    try {
+      setLoading(true);
+      setError("");
 
-            return (
-              <div
-                key={stat.title}
-                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg"
-              >
-                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-indigo-50 transition group-hover:scale-125" />
+      // --------------------------------------------------
+      // 1. Check logged-in user
+      // --------------------------------------------------
 
-                <div className="relative flex items-start justify-between">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50">
-                    <Icon className="h-6 w-6 text-indigo-600" />
-                  </div>
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-                  <span
-                    className={`rounded-full px-3 py-1 text-[11px] font-bold ${
-                      stat.change === "Active"
-                        ? "bg-indigo-50 text-indigo-600"
-                        : "bg-emerald-50 text-emerald-600"
-                    }`}
-                  >
-                    {stat.change}
-                  </span>
-                </div>
+      if (userError || !user) {
+        router.replace("/login");
+        return;
+      }
 
-                <div className="relative mt-5">
-                  <p className="text-sm font-medium text-slate-500">
-                    {stat.title}
-                  </p>
+      // --------------------------------------------------
+      // 2. Get teacher profile
+      // --------------------------------------------------
 
-                  <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-                    {stat.value}
-                  </p>
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("full_name, role")
+        .eq("id", user.id)
+        .single();
 
-                  <p className="mt-1 text-xs text-slate-400">
-                    {stat.description}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
-        </section>
+      if (profileError) {
+        console.error("Profile error:", profileError);
+      }
 
-        {/* Main grid */}
-        <section className="grid gap-6 xl:grid-cols-[1.55fr_1fr]">
-          {/* Assignments */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-500">
-                  Academic Activity
-                </p>
+      if (profile?.role && profile.role !== "teacher") {
+        router.replace("/login");
+        return;
+      }
 
-                <h2 className="mt-1 text-xl font-bold text-slate-900">
-                  Recent Assignments
-                </h2>
-              </div>
+      if (profile?.full_name) {
+        setTeacherName(profile.full_name);
+      }
 
-              <button
-                onClick={() => router.push("/teacher/assignments")}
-                className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold text-indigo-600 transition hover:bg-indigo-50"
-              >
-                View all
-                <ArrowUpRight className="h-4 w-4" />
-              </button>
-            </div>
+      // --------------------------------------------------
+      // 3. Get subjects count
+      // --------------------------------------------------
 
-            <div className="mt-6 space-y-3">
-              {assignments.map((assignment) => {
-                const Icon = assignment.icon;
+      const { count: subjectCount, error: subjectError } = await supabase
+        .from("subjects")
+        .select("id", {
+          count: "exact",
+          head: true,
+        });
 
-                return (
-                  <div
-                    key={assignment.title}
-                    className="group flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/70 p-4 transition hover:border-indigo-100 hover:bg-indigo-50/40"
-                  >
-                    <div className="flex min-w-0 items-center gap-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white shadow-sm">
-                        <Icon className="h-5 w-5 text-indigo-600" />
-                      </div>
+      if (subjectError) {
+        console.error("Subjects error:", subjectError);
+      }
 
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-800">
-                          {assignment.title}
-                        </p>
+      // --------------------------------------------------
+      // 4. Get students
+      //
+      // We count unique student IDs from student_subjects
+      // because teachers currently have access to this table.
+      // --------------------------------------------------
 
-                        <p className="mt-1 text-xs text-slate-400">
-                          {assignment.subject} • {assignment.submissions}
-                        </p>
-                      </div>
-                    </div>
+      const { data: studentSubjectRows, error: studentError } =
+        await supabase
+          .from("student_subjects")
+          .select("student_id");
 
-                    <span
-                      className={`ml-3 shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold ${
-                        assignment.status === "Review"
-                          ? "bg-amber-50 text-amber-600"
-                          : "bg-emerald-50 text-emerald-600"
-                      }`}
-                    >
-                      {assignment.status}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+      if (studentError) {
+        console.error("Student subjects error:", studentError);
+      }
 
-          {/* Today's schedule */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-500">
-                  Today
-                </p>
+      const uniqueStudentIds = new Set(
+        (studentSubjectRows ?? [])
+          .map((row) => row.student_id)
+          .filter(Boolean)
+      );
 
-                <h2 className="mt-1 text-xl font-bold text-slate-900">
-                  Class Schedule
-                </h2>
-              </div>
+      // --------------------------------------------------
+      // 5. Get assignments count
+      // --------------------------------------------------
 
-              <CalendarDays className="h-6 w-6 text-indigo-500" />
-            </div>
+      const { count: assignmentCount, error: assignmentCountError } =
+        await supabase
+          .from("assignments")
+          .select("id", {
+            count: "exact",
+            head: true,
+          });
 
-            <div className="mt-6 space-y-3">
-              {schedule.map((item, index) => (
+      if (assignmentCountError) {
+        console.error(
+          "Assignments count error:",
+          assignmentCountError
+        );
+      }
+
+      // --------------------------------------------------
+      // 6. Get exams count
+      // --------------------------------------------------
+
+      const { count: examCount, error: examCountError } =
+        await supabase
+          .from("exams")
+          .select("id", {
+            count: "exact",
+            head: true,
+          });
+
+      if (examCountError) {
+        console.error("Exams error:", examCountError);
+      }
+
+      // --------------------------------------------------
+      // 7. Get attendance
+      // --------------------------------------------------
+
+      const { data: attendanceRows, error: attendanceError } =
+        await supabase
+          .from("attendance")
+          .select("status");
+
+      if (attendanceError) {
+        console.error("Attendance error:", attendanceError);
+      }
+
+      let attendancePercentage = 0;
+
+      if (attendanceRows && attendanceRows.length > 0) {
+        const presentCount = attendanceRows.filter((row) => {
+          const status = String(row.status).toLowerCase();
+
+          return (
+            status === "present" ||
+            status === "p" ||
+            status === "late"
+          );
+        }).length;
+
+        attendancePercentage = Math.round(
+          (presentCount / attendanceRows.length) * 1000
+        ) / 10;
+      }
+
+      // --------------------------------------------------
+      // 8. Get recent assignments
+      // --------------------------------------------------
+
+      const { data: assignmentRows, error: assignmentsError } =
+        await supabase
+          .from("assignments")
+          .select("id, title, due_date, subject_id")
+          .order("created_at", {
+            ascending: false,
+          })
+          .limit(5);
+
+      if (assignmentsError) {
+        console.error(
+          "Recent assignments error:",
+          assignmentsError
+        );
+      }
+
+      // --------------------------------------------------
+      // 9. Get subjects for assignment display
+      // --------------------------------------------------
+
+      const { data: subjectRows, error: subjectsError } =
+        await supabase
+          .from("subjects")
+          .select("id, subject_name, subject_code")
+          .order("subject_name", {
+            ascending: true,
+          });
+
+      if (subjectsError) {
+        console.error(
+          "Subject list error:",
+          subjectsError
+        );
+      }
+
+      // --------------------------------------------------
+      // 10. Update state
+      // --------------------------------------------------
+
+      setStats({
+        students: uniqueStudentIds.size,
+        subjects: subjectCount ?? 0,
+        assignments: assignmentCount ?? 0,
+        attendance: attendancePercentage,
+        exams: examCount ?? 0,
+      });
+
+      setAssignments(assignmentRows ?? []);
+      setSubjects(subjectRows ?? []);
+    } catch (err) {
+      console.error("Dashboard loading error:", err);
+      setError("Unable to load dashboard data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboard();
+  }, []);
+
+  // --------------------------------------------------
+  // Helpers
+  // --------------------------------------------------
+
+  const getSubjectName = (subjectId: string) => {
+    const subject = subjects.find(
+      (item) => item.id === subjectId
+    );
+
+    return subject?.subject_name ?? "Subject";
+  };
+
+  const formatDate = (date: string | null) => {
+    if (!date) return "No due date";
+
+    return new Date(date).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  // --------------------------------------------------
+  // Loading
+  // --------------------------------------------------
+
+  if (loading) {
+    return (
+      <main className="min-h-[calc(100vh-82px)] bg-slate-50 p-4 sm:p-6 lg:p-8 dark:bg-slate-950">
+        <div className="mx-auto max-w-7xl">
+          <div className="animate-pulse space-y-6">
+            <div className="h-56 rounded-3xl bg-slate-200 dark:bg-slate-800" />
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {[1, 2, 3, 4].map((item) => (
                 <div
-                  key={`${item.time}-${item.subject}`}
-                  className="relative flex gap-4 rounded-xl border border-slate-100 p-4"
-                >
-                  <div className="flex flex-col items-center">
-                    <div
-                      className={`h-3 w-3 rounded-full ${
-                        index === 0 ? "bg-indigo-600" : "bg-slate-300"
-                      }`}
-                    />
-
-                    {index !== schedule.length - 1 && (
-                      <div className="mt-1 h-full w-px bg-slate-200" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-indigo-600">
-                      {item.time}
-                    </p>
-
-                    <p className="mt-1 text-sm font-bold text-slate-800">
-                      {item.subject}
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-400">
-                      {item.className} • {item.room}
-                    </p>
-                  </div>
-                </div>
+                  key={item}
+                  className="h-36 rounded-2xl bg-slate-200 dark:bg-slate-800"
+                />
               ))}
             </div>
 
-            <button
-              onClick={() => router.push("/teacher/timetable")}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
-            >
-              <Clock3 className="h-4 w-4" />
-              View Full Timetable
-            </button>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div className="h-80 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+              <div className="h-80 rounded-2xl bg-slate-200 dark:bg-slate-800" />
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // --------------------------------------------------
+  // Dashboard
+  // --------------------------------------------------
+
+  return (
+    <main className="min-h-[calc(100vh-82px)] bg-slate-50 p-4 sm:p-6 lg:p-8 dark:bg-slate-950">
+      <div className="mx-auto max-w-7xl space-y-6">
+
+        {/* Error */}
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-400">
+            {error}
+          </div>
+        )}
+
+        {/* Welcome Banner */}
+        <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 p-7 text-white shadow-xl shadow-indigo-500/20 sm:p-9">
+          <div className="relative z-10 max-w-2xl">
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium backdrop-blur">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              Academic Year 2026–27
+            </div>
+
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Good morning, {teacherName}! 👋
+            </h1>
+
+            <p className="mt-3 max-w-xl text-sm leading-6 text-indigo-100 sm:text-base">
+              Welcome back to your teaching workspace.
+              Here&apos;s a quick overview of your academic
+              activities.
+            </p>
+          </div>
+
+          <div className="absolute -right-10 -top-10 h-56 w-56 rounded-full bg-white/10" />
+          <div className="absolute -bottom-24 right-24 h-64 w-64 rounded-full bg-white/5" />
+
+          <div className="absolute right-8 top-1/2 hidden -translate-y-1/2 lg:flex">
+            <div className="flex h-28 w-28 items-center justify-center rounded-3xl border border-white/20 bg-white/10 backdrop-blur">
+              <GraduationCap size={58} strokeWidth={1.5} />
+            </div>
           </div>
         </section>
 
-        {/* Bottom section */}
-        <section className="grid gap-6 lg:grid-cols-3">
+        {/* Stats */}
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+          {/* Students */}
+          <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                <Users size={23} />
+              </div>
+
+              <ArrowUpRight
+                size={18}
+                className="text-emerald-500 opacity-70"
+              />
+            </div>
+
+            <p className="mt-5 text-sm font-medium text-slate-500 dark:text-slate-400">
+              Total Students
+            </p>
+
+            <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-white">
+              {stats.students}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Enrolled students
+            </p>
+          </div>
+
+          {/* Subjects */}
+          <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400">
+                <BookOpen size={23} />
+              </div>
+
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                Active
+              </span>
+            </div>
+
+            <p className="mt-5 text-sm font-medium text-slate-500 dark:text-slate-400">
+              Subjects
+            </p>
+
+            <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-white">
+              {stats.subjects}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Available subjects
+            </p>
+          </div>
+
+          {/* Assignments */}
+          <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                <FileText size={23} />
+              </div>
+
+              <ArrowUpRight
+                size={18}
+                className="text-emerald-500 opacity-70"
+              />
+            </div>
+
+            <p className="mt-5 text-sm font-medium text-slate-500 dark:text-slate-400">
+              Assignments
+            </p>
+
+            <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-white">
+              {stats.assignments}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Created assignments
+            </p>
+          </div>
+
           {/* Attendance */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
+                <ClipboardCheck size={23} />
+              </div>
+
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400">
+                Average
+              </span>
+            </div>
+
+            <p className="mt-5 text-sm font-medium text-slate-500 dark:text-slate-400">
+              Attendance
+            </p>
+
+            <p className="mt-1 text-3xl font-bold text-slate-900 dark:text-white">
+              {stats.attendance}%
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Overall attendance
+            </p>
+          </div>
+        </section>
+
+        {/* Lower Section */}
+        <section className="grid gap-6 lg:grid-cols-3">
+
+          {/* Recent Assignments */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2 dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-5 dark:border-slate-800">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Recent Assignments
+                </h2>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Latest assignments created
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => router.push("/teacher/assignments")}
+                className="rounded-xl px-3 py-2 text-xs font-semibold text-indigo-600 transition hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950/40"
+              >
+                View all
+              </button>
+            </div>
+
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {assignments.length === 0 ? (
+                <div className="px-5 py-12 text-center">
+                  <FileText
+                    size={36}
+                    className="mx-auto text-slate-300 dark:text-slate-700"
+                  />
+
+                  <p className="mt-3 text-sm font-medium text-slate-500">
+                    No assignments yet
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push("/teacher/assignments")
+                    }
+                    className="mt-4 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-700"
+                  >
+                    Create Assignment
+                  </button>
+                </div>
+              ) : (
+                assignments.map((assignment) => (
+                  <div
+                    key={assignment.id}
+                    className="flex items-center gap-4 px-5 py-4 transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                  >
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                      <FileText size={20} />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-800 dark:text-white">
+                        {assignment.title}
+                      </p>
+
+                      <p className="mt-1 text-xs text-slate-400">
+                        {getSubjectName(assignment.subject_id)}
+                      </p>
+                    </div>
+
+                    <div className="hidden items-center gap-2 text-xs text-slate-400 sm:flex">
+                      <Clock size={14} />
+                      {formatDate(assignment.due_date)}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Academic Overview */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-400">
+                <GraduationCap size={21} />
               </div>
 
               <div>
-                <p className="text-sm font-semibold text-slate-800">
-                  Attendance
-                </p>
+                <h2 className="font-bold text-slate-900 dark:text-white">
+                  Academic Overview
+                </h2>
 
                 <p className="text-xs text-slate-400">
-                  Today&apos;s attendance
+                  Current academic activity
                 </p>
               </div>
             </div>
 
-            <div className="mt-6">
-              <div className="flex items-end justify-between">
-                <p className="text-3xl font-bold text-slate-900">92.4%</p>
+            <div className="mt-6 space-y-4">
 
-                <p className="text-xs font-semibold text-emerald-600">
-                  Excellent
-                </p>
+              {/* Exams */}
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-indigo-600 shadow-sm dark:bg-slate-900 dark:text-indigo-400">
+                    <GraduationCap size={18} />
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                      Examinations
+                    </p>
+
+                    <p className="text-xs text-slate-400">
+                      Scheduled exams
+                    </p>
+                  </div>
+                </div>
+
+                <span className="text-xl font-bold text-slate-900 dark:text-white">
+                  {stats.exams}
+                </span>
               </div>
 
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-emerald-500"
-                  style={{ width: "92.4%" }}
+              {/* Assignments */}
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm dark:bg-slate-900 dark:text-blue-400">
+                    <FileText size={18} />
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                      Assignments
+                    </p>
+
+                    <p className="text-xs text-slate-400">
+                      Total created
+                    </p>
+                  </div>
+                </div>
+
+                <span className="text-xl font-bold text-slate-900 dark:text-white">
+                  {stats.assignments}
+                </span>
+              </div>
+
+              {/* Attendance */}
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 p-4 dark:bg-slate-800/60">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-emerald-600 shadow-sm dark:bg-slate-900 dark:text-emerald-400">
+                    <ClipboardCheck size={18} />
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                      Attendance
+                    </p>
+
+                    <p className="text-xs text-slate-400">
+                      Overall percentage
+                    </p>
+                  </div>
+                </div>
+
+                <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                  {stats.attendance}%
+                </span>
+              </div>
+
+              {/* Timetable */}
+              <button
+                type="button"
+                onClick={() =>
+                  router.push("/teacher/timetable")
+                }
+                className="flex w-full items-center justify-between rounded-xl border border-dashed border-slate-200 p-4 text-left transition hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-700 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                    <CalendarDays size={18} />
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                      Timetable
+                    </p>
+
+                    <p className="text-xs text-slate-400">
+                      View teaching schedule
+                    </p>
+                  </div>
+                </div>
+
+                <ArrowUpRight
+                  size={18}
+                  className="text-slate-400"
                 />
-              </div>
-            </div>
-
-            <button
-              onClick={() => router.push("/teacher/attendance")}
-              className="mt-5 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-            >
-              Manage attendance →
-            </button>
-          </div>
-
-          {/* Submissions */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50">
-                <FileCheck2 className="h-5 w-5 text-amber-600" />
-              </div>
-
-              <div>
-                <p className="text-sm font-semibold text-slate-800">
-                  Pending Reviews
-                </p>
-
-                <p className="text-xs text-slate-400">
-                  Assignment submissions
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-6 text-3xl font-bold text-slate-900">27</p>
-
-            <p className="mt-1 text-sm text-slate-400">
-              submissions waiting for review
-            </p>
-
-            <button
-              onClick={() => router.push("/teacher/submissions")}
-              className="mt-5 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
-            >
-              Review submissions →
-            </button>
-          </div>
-
-          {/* Quick actions */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-500">
-              Quick Actions
-            </p>
-
-            <h2 className="mt-1 text-xl font-bold text-slate-900">
-              Manage Academics
-            </h2>
-
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              <QuickAction
-                icon={Users}
-                label="Students"
-                onClick={() => router.push("/teacher/students")}
-              />
-
-              <QuickAction
-                icon={BookOpen}
-                label="Subjects"
-                onClick={() => router.push("/teacher/subjects")}
-              />
-
-              <QuickAction
-                icon={ClipboardCheck}
-                label="Attendance"
-                onClick={() => router.push("/teacher/attendance")}
-              />
-
-              <QuickAction
-                icon={GraduationCap}
-                label="Exams"
-                onClick={() => router.push("/teacher/examinations")}
-              />
+              </button>
             </div>
           </div>
         </section>
+
+        {/* Refresh */}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={loadDashboard}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-indigo-700 dark:hover:text-indigo-400"
+          >
+            <RefreshCw size={15} />
+            Refresh Dashboard
+          </button>
+        </div>
       </div>
     </main>
-  );
-}
-
-function QuickAction({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: typeof Users;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="group rounded-xl border border-slate-100 bg-slate-50 p-3 text-left transition hover:-translate-y-0.5 hover:border-indigo-100 hover:bg-indigo-50"
-    >
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white shadow-sm">
-        <Icon className="h-4 w-4 text-indigo-600 transition group-hover:scale-110" />
-      </div>
-
-      <p className="mt-2 text-xs font-semibold text-slate-700">{label}</p>
-    </button>
   );
 }
