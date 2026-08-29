@@ -1,15 +1,17 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   BookOpen,
-  CalendarDays,
   Edit3,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+
 import { createClient } from "@/lib/supabase/client";
 
 type Subject = {
@@ -17,667 +19,645 @@ type Subject = {
   subject_name: string;
   subject_code: string;
   description: string | null;
-  created_at: string | null;
-  updated_at: string | null;
+};
+
+type SubjectForm = {
+  subject_name: string;
+  subject_code: string;
+  description: string;
+};
+
+const emptyForm: SubjectForm = {
+  subject_name: "",
+  subject_code: "",
+  description: "",
 };
 
 export default function SubjectsPage() {
-  const supabase = createClient();
-
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [search, setSearch] = useState("");
+
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [formError, setFormError] = useState("");
 
-  const [modalOpen, setModalOpen] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
 
-  const [subjectName, setSubjectName] = useState("");
-  const [subjectCode, setSubjectCode] = useState("");
-  const [description, setDescription] = useState("");
+  const [form, setForm] = useState<SubjectForm>(emptyForm);
+
+  const loadSubjects = async (isRefresh = false) => {
+    const supabase = createClient();
+
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    setError("");
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        throw new Error("Your session has expired. Please sign in again.");
+      }
+
+      const { data, error: subjectsError } = await supabase
+        .from("subjects")
+        .select("id, subject_name, subject_code, description")
+        .order("subject_name", { ascending: true });
+
+      if (subjectsError) {
+        throw subjectsError;
+      }
+
+      setSubjects(data ?? []);
+    } catch (err: unknown) {
+      console.error("Failed to load subjects:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load subjects. Please try again."
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     loadSubjects();
   }, []);
 
-  async function loadSubjects() {
-    setLoading(true);
-    setError("");
-
-    const { data, error } = await supabase
-      .from("subjects")
-      .select(
-        "id, subject_name, subject_code, description, created_at, updated_at"
-      )
-      .order("subject_name", { ascending: true });
-
-    if (error) {
-      console.error("Subject loading error:", error);
-      setError(error.message);
-      setLoading(false);
-      return;
-    }
-
-    setSubjects(data ?? []);
-    setLoading(false);
-  }
-
   const filteredSubjects = useMemo(() => {
-    const value = search.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
 
-    if (!value) {
+    if (!query) {
       return subjects;
     }
 
-    return subjects.filter(
-      (subject) =>
-        subject.subject_name.toLowerCase().includes(value) ||
-        subject.subject_code.toLowerCase().includes(value) ||
-        subject.description?.toLowerCase().includes(value)
-    );
+    return subjects.filter((subject) => {
+      return (
+        subject.subject_name.toLowerCase().includes(query) ||
+        subject.subject_code.toLowerCase().includes(query) ||
+        (subject.description ?? "").toLowerCase().includes(query)
+      );
+    });
   }, [subjects, search]);
 
-  function openCreateModal() {
+  const openAddModal = () => {
     setEditingSubject(null);
-    setSubjectName("");
-    setSubjectCode("");
-    setDescription("");
-    setError("");
-    setSuccess("");
-    setModalOpen(true);
-  }
+    setForm(emptyForm);
+    setFormError("");
+    setShowModal(true);
+  };
 
-  function openEditModal(subject: Subject) {
+  const openEditModal = (subject: Subject) => {
     setEditingSubject(subject);
-    setSubjectName(subject.subject_name);
-    setSubjectCode(subject.subject_code);
-    setDescription(subject.description ?? "");
-    setError("");
-    setSuccess("");
-    setModalOpen(true);
-  }
 
-  function closeModal() {
+    setForm({
+      subject_name: subject.subject_name,
+      subject_code: subject.subject_code,
+      description: subject.description ?? "",
+    });
+
+    setFormError("");
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
     if (saving) return;
 
-    setModalOpen(false);
+    setShowModal(false);
     setEditingSubject(null);
-    setSubjectName("");
-    setSubjectCode("");
-    setDescription("");
-  }
+    setForm(emptyForm);
+    setFormError("");
+  };
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const handleSave = async () => {
+    const supabase = createClient();
 
-    setError("");
-    setSuccess("");
+    setFormError("");
 
-    const name = subjectName.trim();
-    const code = subjectCode.trim().toUpperCase();
-    const desc = description.trim();
+    const subjectName = form.subject_name.trim();
+    const subjectCode = form.subject_code.trim();
+    const description = form.description.trim();
 
-    if (!name) {
-      setError("Please enter a subject name.");
+    if (!subjectName) {
+      setFormError("Subject name is required.");
       return;
     }
 
-    if (!code) {
-      setError("Please enter a subject code.");
+    if (!subjectCode) {
+      setFormError("Subject code is required.");
       return;
     }
 
     setSaving(true);
 
-    if (editingSubject) {
-      const { data, error } = await supabase
-        .from("subjects")
-        .update({
-          subject_name: name,
-          subject_code: code,
-          description: desc || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editingSubject.id)
-        .select(
-          "id, subject_name, subject_code, description, created_at, updated_at"
-        )
-        .single();
+    try {
+      if (editingSubject) {
+        const { data, error: updateError } = await supabase
+          .from("subjects")
+          .update({
+            subject_name: subjectName,
+            subject_code: subjectCode,
+            description: description || null,
+          })
+          .eq("id", editingSubject.id)
+          .select("id, subject_name, subject_code, description")
+          .single();
 
-      if (error) {
-        console.error("Subject update error:", error);
-        setError(error.message);
-        setSaving(false);
-        return;
+        if (updateError) {
+          throw updateError;
+        }
+
+        setSubjects((current) =>
+          current
+            .map((subject) =>
+              subject.id === editingSubject.id ? data : subject
+            )
+            .sort((a, b) =>
+              a.subject_name.localeCompare(b.subject_name)
+            )
+        );
+      } else {
+        const { data, error: insertError } = await supabase
+          .from("subjects")
+          .insert({
+            subject_name: subjectName,
+            subject_code: subjectCode,
+            description: description || null,
+          })
+          .select("id, subject_name, subject_code, description")
+          .single();
+
+        if (insertError) {
+          throw insertError;
+        }
+
+        setSubjects((current) =>
+          [...current, data].sort((a, b) =>
+            a.subject_name.localeCompare(b.subject_name)
+          )
+        );
       }
 
-      setSubjects((current) =>
-        current.map((subject) =>
-          subject.id === editingSubject.id ? data : subject
-        )
+      closeModal();
+    } catch (err: unknown) {
+      console.error("Failed to save subject:", err);
+
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : "Unable to save subject. Please try again."
       );
-
-      setSuccess("Subject updated successfully.");
-
-      setTimeout(() => {
-        closeModal();
-      }, 700);
-    } else {
-      const { data, error } = await supabase
-        .from("subjects")
-        .insert({
-          subject_name: name,
-          subject_code: code,
-          description: desc || null,
-        })
-        .select(
-          "id, subject_name, subject_code, description, created_at, updated_at"
-        )
-        .single();
-
-      if (error) {
-        console.error("Subject creation error:", error);
-        setError(error.message);
-        setSaving(false);
-        return;
-      }
-
-      setSubjects((current) =>
-        [...current, data].sort((a, b) =>
-          a.subject_name.localeCompare(b.subject_name)
-        )
-      );
-
-      setSuccess("Subject created successfully.");
-
-      setTimeout(() => {
-        closeModal();
-      }, 700);
+    } finally {
+      setSaving(false);
     }
+  };
 
-    setSaving(false);
-  }
-
-  async function handleDelete(subject: Subject) {
+  const handleDelete = async (subject: Subject) => {
     const confirmed = window.confirm(
       `Are you sure you want to delete "${subject.subject_name}"?`
     );
 
-    if (!confirmed) return;
-
-    setError("");
-    setSuccess("");
-
-    const { error } = await supabase
-      .from("subjects")
-      .delete()
-      .eq("id", subject.id);
-
-    if (error) {
-      console.error("Subject delete error:", error);
-      setError(error.message);
+    if (!confirmed) {
       return;
     }
 
-    setSubjects((current) =>
-      current.filter((item) => item.id !== subject.id)
-    );
+    const supabase = createClient();
 
-    setSuccess("Subject deleted successfully.");
+    setError("");
 
-    setTimeout(() => {
-      setSuccess("");
-    }, 2500);
-  }
+    try {
+      const { error: deleteError } = await supabase
+        .from("subjects")
+        .delete()
+        .eq("id", subject.id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      setSubjects((current) =>
+        current.filter((item) => item.id !== subject.id)
+      );
+    } catch (err: unknown) {
+      console.error("Failed to delete subject:", err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to delete subject. Please try again."
+      );
+    }
+  };
 
   return (
-    <main className="min-h-[calc(100vh-82px)] bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1500px] space-y-6">
-
-        {/* Hero */}
-        <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 p-7 text-white shadow-xl shadow-indigo-200/50 sm:p-9">
-          <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10" />
-
-          <div className="absolute -bottom-20 right-40 h-52 w-52 rounded-full bg-white/5" />
-
-          <div className="relative z-10 flex items-center justify-between gap-6">
-            <div>
-              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 backdrop-blur">
-                <BookOpen className="h-6 w-6" />
-              </div>
-
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-200">
-                Academic Management
-              </p>
-
-              <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">
-                Subject Management
-              </h1>
-
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-indigo-100 sm:text-base">
-                Create, organize and manage the subjects taught by the
-                faculty.
-              </p>
+    <main className="min-h-[calc(100vh-82px)] bg-slate-50 p-4 dark:bg-slate-950 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl">
+        {/* Header */}
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400">
+              <BookOpen size={17} />
+              Teacher Portal
             </div>
 
-            <div className="hidden h-28 w-28 items-center justify-center rounded-[28px] border border-white/10 bg-white/10 backdrop-blur md:flex">
-              <BookOpen className="h-14 w-14 text-white/90" />
-            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+              Subject Management
+            </h1>
+
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Create, view, update and manage academic subjects.
+            </p>
           </div>
-        </section>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => loadSubjects(true)}
+              disabled={loading || refreshing}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+            >
+              <RefreshCw
+                size={17}
+                className={refreshing ? "animate-spin" : ""}
+              />
+              Refresh
+            </button>
+
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition hover:-translate-y-0.5 hover:shadow-lg"
+            >
+              <Plus size={18} />
+              Add Subject
+            </button>
+          </div>
+        </div>
 
         {/* Statistics */}
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <StatCard
-            icon={BookOpen}
-            title="Total Subjects"
-            value={subjects.length}
-            description="Available subjects"
-          />
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Total Subjects
+            </p>
 
-          <StatCard
-            icon={CalendarDays}
-            title="Academic Subjects"
-            value={subjects.length}
-            description="Currently managed"
-          />
+            <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
+              {loading ? "—" : subjects.length}
+            </p>
 
-          <StatCard
-            icon={Search}
-            title="Search Results"
-            value={filteredSubjects.length}
-            description="Matching subjects"
-          />
-        </section>
+            <p className="mt-1 text-xs text-slate-400">
+              Available academic subjects
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Search Results
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
+              {loading ? "—" : filteredSubjects.length}
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Subjects matching your search
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Management
+            </p>
+
+            <p className="mt-2 text-lg font-bold text-emerald-600 dark:text-emerald-400">
+              Active
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Create and manage subjects
+            </p>
+          </div>
+        </div>
 
         {/* Main card */}
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          {/* Card header */}
+          <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                Subjects
+              </h2>
 
-          {/* Toolbar */}
-          <div className="border-b border-slate-100 p-5 sm:p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {search
+                  ? `${filteredSubjects.length} subject${
+                      filteredSubjects.length === 1 ? "" : "s"
+                    } found`
+                  : `${subjects.length} subject${
+                      subjects.length === 1 ? "" : "s"
+                    } found`}
+              </p>
+            </div>
 
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">
-                  All Subjects
-                </h2>
+            <div className="relative w-full sm:w-80">
+              <Search
+                size={18}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+              />
 
-                <p className="mt-1 text-sm text-slate-400">
-                  Manage your subject catalogue
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-
-                {/* Search */}
-                <div className="relative sm:w-[300px]">
-                  <Search
-                    size={18}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
-                  />
-
-                  <input
-                    type="search"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search subjects..."
-                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
-                  />
-                </div>
-
-                {/* Add */}
-                <button
-                  type="button"
-                  onClick={openCreateModal}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5 hover:shadow-xl"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Subject
-                </button>
-              </div>
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search subjects..."
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
+              />
             </div>
           </div>
 
-          {/* Messages */}
+          {/* Error */}
           {error && (
-            <div className="mx-5 mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 sm:mx-6">
-              <strong>Error:</strong> {error}
-            </div>
-          )}
+            <div className="m-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+              <AlertCircle size={19} className="mt-0.5 shrink-0" />
 
-          {success && (
-            <div className="mx-5 mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 sm:mx-6">
-              {success}
+              <div>
+                <p className="font-semibold">
+                  Unable to complete request
+                </p>
+
+                <p className="mt-1">{error}</p>
+              </div>
             </div>
           )}
 
           {/* Loading */}
-          {loading ? (
-            <div className="p-12 text-center">
-              <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-600" />
-
-              <p className="mt-4 text-sm text-slate-400">
-                Loading subjects...
-              </p>
-            </div>
-          ) : filteredSubjects.length === 0 ? (
-            /* Empty state */
-            <div className="p-12 text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
-                <BookOpen className="h-7 w-7 text-indigo-500" />
+          {loading && (
+            <div className="p-6">
+              <div className="space-y-3">
+                {[1, 2, 3].map((item) => (
+                  <div
+                    key={item}
+                    className="animate-pulse rounded-xl border border-slate-100 p-5 dark:border-slate-800"
+                  >
+                    <div className="h-4 w-48 rounded bg-slate-200 dark:bg-slate-800" />
+                    <div className="mt-3 h-3 w-32 rounded bg-slate-100 dark:bg-slate-800/70" />
+                    <div className="mt-3 h-3 w-72 rounded bg-slate-100 dark:bg-slate-800/70" />
+                  </div>
+                ))}
               </div>
-
-              <h3 className="mt-5 text-lg font-semibold text-slate-800">
-                {search ? "No subjects found" : "No subjects yet"}
-              </h3>
-
-              <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">
-                {search
-                  ? "Try searching with a different subject name or code."
-                  : "Create your first subject to start managing the academic catalogue."}
-              </p>
-
-              {!search && (
-                <button
-                  type="button"
-                  onClick={openCreateModal}
-                  className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-700"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Subject
-                </button>
-              )}
-            </div>
-          ) : (
-            /* Table */
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px]">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50/70 text-left">
-                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Subject
-                    </th>
-
-                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Code
-                    </th>
-
-                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Description
-                    </th>
-
-                    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Created
-                    </th>
-
-                    <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {filteredSubjects.map((subject) => (
-                    <tr
-                      key={subject.id}
-                      className="border-b border-slate-100 last:border-0 transition hover:bg-indigo-50/30"
-                    >
-                      <td className="px-6 py-5">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50">
-                            <BookOpen className="h-5 w-5 text-indigo-600" />
-                          </div>
-
-                          <div>
-                            <p className="font-semibold text-slate-800">
-                              {subject.subject_name}
-                            </p>
-
-                            <p className="mt-0.5 text-xs text-slate-400">
-                              Academic Subject
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-5">
-                        <span className="rounded-lg bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-600">
-                          {subject.subject_code}
-                        </span>
-                      </td>
-
-                      <td className="max-w-[320px] px-6 py-5">
-                        <p className="truncate text-sm text-slate-500">
-                          {subject.description || "No description"}
-                        </p>
-                      </td>
-
-                      <td className="px-6 py-5 text-sm text-slate-500">
-                        {formatDate(subject.created_at)}
-                      </td>
-
-                      <td className="px-6 py-5">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(subject)}
-                            className="rounded-lg p-2.5 text-slate-400 transition hover:bg-indigo-50 hover:text-indigo-600"
-                            aria-label={`Edit ${subject.subject_name}`}
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(subject)}
-                            className="rounded-lg p-2.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
-                            aria-label={`Delete ${subject.subject_name}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           )}
+
+          {/* Subject list */}
+          {!loading && !error && filteredSubjects.length > 0 && (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredSubjects.map((subject) => (
+                <div
+                  key={subject.id}
+                  className="flex flex-col gap-5 p-5 transition hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-slate-800/50"
+                >
+                  <div className="flex min-w-0 items-start gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-sm">
+                      <BookOpen size={21} />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-semibold text-slate-900 dark:text-white">
+                          {subject.subject_name}
+                        </h3>
+
+                        <span className="rounded-md bg-indigo-50 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
+                          {subject.subject_code}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        {subject.description || "No description provided."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openEditModal(subject)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-indigo-400"
+                    >
+                      <Edit3 size={16} />
+                      Edit
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(subject)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-red-100 px-3 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-900/40 dark:text-red-400 dark:hover:bg-red-950/30"
+                    >
+                      <Trash2 size={16} />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty */}
+          {!loading &&
+            !error &&
+            filteredSubjects.length === 0 && (
+              <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500">
+                  {search ? (
+                    <Search size={28} />
+                  ) : (
+                    <BookOpen size={28} />
+                  )}
+                </div>
+
+                <h3 className="mt-5 text-lg font-semibold text-slate-900 dark:text-white">
+                  {search
+                    ? "No subjects found"
+                    : "No subjects registered"}
+                </h3>
+
+                <p className="mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">
+                  {search
+                    ? "Try changing your search keywords."
+                    : "Create your first academic subject to get started."}
+                </p>
+
+                {search ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="mt-5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                  >
+                    Clear Search
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={openAddModal}
+                    className="mt-5 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-700"
+                  >
+                    <Plus size={17} />
+                    Add Subject
+                  </button>
+                )}
+              </div>
+            )}
         </section>
       </div>
 
-      {/* Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl">
-
+      {/* Add / Edit Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
             {/* Modal header */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-800">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-indigo-500">
-                  {editingSubject ? "Edit Subject" : "New Subject"}
-                </p>
-
-                <h2 className="mt-1 text-xl font-bold text-slate-900">
-                  {editingSubject
-                    ? "Update Subject"
-                    : "Create Subject"}
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                  {editingSubject ? "Edit Subject" : "Add Subject"}
                 </h2>
+
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {editingSubject
+                    ? "Update the subject information."
+                    : "Enter the details for the new subject."}
+                </p>
               </div>
 
               <button
                 type="button"
                 onClick={closeModal}
                 disabled={saving}
-                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:hover:bg-slate-800 dark:hover:text-white"
                 aria-label="Close"
               >
-                <X className="h-5 w-5" />
+                <X size={20} />
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-5 p-6">
-
-              {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {error}
-                </div>
-              )}
-
-              {success && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  {success}
+            {/* Modal body */}
+            <div className="space-y-5 p-6">
+              {formError && (
+                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                  <AlertCircle size={18} className="mt-0.5 shrink-0" />
+                  <span>{formError}</span>
                 </div>
               )}
 
               <div>
-                <label
-                  htmlFor="subjectName"
-                  className="mb-2 block text-sm font-semibold text-slate-700"
-                >
+                <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                   Subject Name
                 </label>
 
                 <input
-                  id="subjectName"
                   type="text"
-                  value={subjectName}
+                  value={form.subject_name}
                   onChange={(event) =>
-                    setSubjectName(event.target.value)
+                    setForm((current) => ({
+                      ...current,
+                      subject_name: event.target.value,
+                    }))
                   }
                   placeholder="e.g. Data Structures"
-                  disabled={saving}
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-50"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="subjectCode"
-                  className="mb-2 block text-sm font-semibold text-slate-700"
-                >
+                <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                   Subject Code
                 </label>
 
                 <input
-                  id="subjectCode"
                   type="text"
-                  value={subjectCode}
+                  value={form.subject_code}
                   onChange={(event) =>
-                    setSubjectCode(event.target.value.toUpperCase())
+                    setForm((current) => ({
+                      ...current,
+                      subject_code: event.target.value,
+                    }))
                   }
-                  placeholder="e.g. IT301"
-                  disabled={saving}
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm uppercase text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-50"
+                  placeholder="e.g. CS301"
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm uppercase text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 />
               </div>
 
               <div>
-                <label
-                  htmlFor="description"
-                  className="mb-2 block text-sm font-semibold text-slate-700"
-                >
+                <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
                   Description
-                  <span className="ml-2 font-normal text-slate-400">
-                    Optional
+                  <span className="ml-1 font-normal text-slate-400">
+                    (optional)
                   </span>
                 </label>
 
                 <textarea
-                  id="description"
-                  value={description}
+                  value={form.description}
                   onChange={(event) =>
-                    setDescription(event.target.value)
+                    setForm((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
                   }
                   placeholder="Brief description of the subject..."
                   rows={4}
-                  disabled={saving}
-                  className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 disabled:opacity-50"
+                  className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
                 />
               </div>
+            </div>
 
-              <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={closeModal}
-                  disabled={saving}
-                  className="h-11 rounded-xl border border-slate-200 px-5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
+            {/* Modal footer */}
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 sm:flex-row sm:justify-end dark:border-slate-800 dark:bg-slate-950">
+              <button
+                type="button"
+                onClick={closeModal}
+                disabled={saving}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
 
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {saving ? (
-                    <>
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4" />
-                      {editingSubject ? "Update Subject" : "Create Subject"}
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {saving && (
+                  <RefreshCw size={16} className="animate-spin" />
+                )}
+
+                {saving
+                  ? "Saving..."
+                  : editingSubject
+                    ? "Update Subject"
+                    : "Create Subject"}
+              </button>
+            </div>
           </div>
         </div>
       )}
     </main>
   );
-}
-
-function StatCard({
-  icon: Icon,
-  title,
-  value,
-  description,
-}: {
-  icon: typeof BookOpen;
-  title: string;
-  value: number;
-  description: string;
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-lg">
-      <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-indigo-50 transition group-hover:scale-125" />
-
-      <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50">
-        <Icon className="h-5 w-5 text-indigo-600" />
-      </div>
-
-      <div className="relative mt-5">
-        <p className="text-sm font-medium text-slate-500">
-          {title}
-        </p>
-
-        <p className="mt-1 text-3xl font-bold text-slate-900">
-          {value}
-        </p>
-
-        <p className="mt-1 text-xs text-slate-400">
-          {description}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function formatDate(date: string | null) {
-  if (!date) return "—";
-
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(date));
 }

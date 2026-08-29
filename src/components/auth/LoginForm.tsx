@@ -17,7 +17,6 @@ import { createClient } from "@/lib/supabase/client";
 
 export default function LoginForm() {
   const router = useRouter();
-  const supabase = createClient();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,7 +32,10 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      // Authenticate with Supabase
+      // Create a fresh Supabase browser client for this login attempt
+      const supabase = createClient();
+
+      // 1. Authenticate with Supabase
       const { data, error: loginError } =
         await supabase.auth.signInWithPassword({
           email: email.trim(),
@@ -48,14 +50,45 @@ export default function LoginForm() {
         throw new Error("Unable to authenticate user.");
       }
 
-      // Get the user's existing profile
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, role")
-        .eq("id", data.user.id)
-        .single();
+      if (!data.session) {
+        throw new Error(
+          "Login succeeded, but no authentication session was created."
+        );
+      }
+
+      console.log("LOGIN USER:", data.user.id);
+      console.log("LOGIN SESSION CREATED:", true);
+
+      // 2. Verify that the session is actually available
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error("SESSION ERROR:", sessionError);
+        throw sessionError;
+      }
+
+      if (!session) {
+        throw new Error(
+          "Login succeeded, but the authentication session was not saved."
+        );
+      }
+
+      console.log("SESSION VERIFIED:", true);
+
+      // 3. Get the user's profile and role
+      const { data: profile, error: profileError } =
+        await supabase
+          .from("profiles")
+          .select("id, full_name, email, role")
+          .eq("id", data.user.id)
+          .single();
 
       if (profileError || !profile) {
+        console.error("PROFILE ERROR:", profileError);
+
         await supabase.auth.signOut();
 
         throw new Error(
@@ -63,7 +96,9 @@ export default function LoginForm() {
         );
       }
 
-      // Role-based routing
+      console.log("LOGIN PROFILE:", profile);
+
+      // 4. Role-based routing
       if (profile.role === "teacher") {
         router.replace("/teacher/dashboard");
         router.refresh();
@@ -76,10 +111,13 @@ export default function LoginForm() {
         return;
       }
 
+      // 5. Invalid role
       await supabase.auth.signOut();
 
       throw new Error("Your account has an invalid role.");
     } catch (err: unknown) {
+      console.error("LOGIN ERROR:", err);
+
       setError(
         err instanceof Error
           ? err.message
@@ -104,7 +142,6 @@ export default function LoginForm() {
       </div>
 
       <div className="relative z-10 grid min-h-screen lg:grid-cols-2">
-
         {/* Left panel */}
         <section className="relative hidden items-center justify-center overflow-hidden px-12 lg:flex">
           <div className="absolute inset-0 bg-gradient-to-br from-blue-950/90 via-slate-950/80 to-cyan-950/90" />
@@ -141,7 +178,6 @@ export default function LoginForm() {
         {/* Login panel */}
         <section className="flex items-center justify-center px-6 py-12 sm:px-10">
           <div className="w-full max-w-md">
-
             {/* Brand */}
             <div className="mb-8 flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-lg shadow-blue-500/20">
@@ -161,7 +197,6 @@ export default function LoginForm() {
 
             {/* Card */}
             <div className="rounded-3xl border border-white/10 bg-white/[0.07] p-7 shadow-2xl backdrop-blur-2xl sm:p-9">
-
               <div className="mb-8">
                 <p className="mb-2 text-sm font-medium text-cyan-300">
                   Welcome back
@@ -186,7 +221,6 @@ export default function LoginForm() {
               )}
 
               <form onSubmit={handleLogin} className="space-y-5">
-
                 {/* Email */}
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-200">
@@ -270,7 +304,6 @@ export default function LoginForm() {
                     </>
                   )}
                 </button>
-
               </form>
 
               <div className="mt-8 border-t border-white/10 pt-6 text-center">
@@ -278,7 +311,6 @@ export default function LoginForm() {
                   Secure role-based access powered by Supabase.
                 </p>
               </div>
-
             </div>
           </div>
         </section>
