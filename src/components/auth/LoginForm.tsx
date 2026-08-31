@@ -32,10 +32,12 @@ export default function LoginForm() {
     setLoading(true);
 
     try {
-      // Create a fresh Supabase browser client for this login attempt
       const supabase = createClient();
 
+      // --------------------------------------------------
       // 1. Authenticate with Supabase
+      // --------------------------------------------------
+
       const { data, error: loginError } =
         await supabase.auth.signInWithPassword({
           email: email.trim(),
@@ -59,7 +61,10 @@ export default function LoginForm() {
       console.log("LOGIN USER:", data.user.id);
       console.log("LOGIN SESSION CREATED:", true);
 
-      // 2. Verify that the session is actually available
+      // --------------------------------------------------
+      // 2. Verify session
+      // --------------------------------------------------
+
       const {
         data: { session },
         error: sessionError,
@@ -78,7 +83,10 @@ export default function LoginForm() {
 
       console.log("SESSION VERIFIED:", true);
 
-      // 3. Get the user's profile and role
+      // --------------------------------------------------
+      // 3. Get profile and role
+      // --------------------------------------------------
+
       const { data: profile, error: profileError } =
         await supabase
           .from("profiles")
@@ -97,24 +105,48 @@ export default function LoginForm() {
       }
 
       console.log("LOGIN PROFILE:", profile);
+      console.log("LOGIN ROLE:", profile.role);
 
+      // --------------------------------------------------
       // 4. Role-based routing
+      // --------------------------------------------------
+
+      if (profile.role === "admin") {
+        console.log("REDIRECTING TO ADMIN DASHBOARD");
+
+        router.replace("/admin/dashboard");
+        router.refresh();
+
+        return;
+      }
+
       if (profile.role === "teacher") {
+        console.log("REDIRECTING TO TEACHER DASHBOARD");
+
         router.replace("/teacher/dashboard");
         router.refresh();
+
         return;
       }
 
       if (profile.role === "student") {
+        console.log("REDIRECTING TO STUDENT DASHBOARD");
+
         router.replace("/student/dashboard");
         router.refresh();
+
         return;
       }
 
+      // --------------------------------------------------
       // 5. Invalid role
+      // --------------------------------------------------
+
       await supabase.auth.signOut();
 
-      throw new Error("Your account has an invalid role.");
+      throw new Error(
+        `Your account has an invalid role: ${profile.role}`
+      );
     } catch (err: unknown) {
       console.error("LOGIN ERROR:", err);
 
@@ -163,8 +195,8 @@ export default function LoginForm() {
             </h1>
 
             <p className="mt-6 max-w-lg text-lg leading-8 text-slate-300">
-              A modern academic management platform for teachers and
-              students.
+              A modern academic management platform for teachers,
+              students, and administrators.
             </p>
 
             <div className="mt-10 flex items-center gap-3">
@@ -220,7 +252,10 @@ export default function LoginForm() {
                 </div>
               )}
 
-              <form onSubmit={handleLogin} className="space-y-5">
+              <form
+                onSubmit={handleLogin}
+                className="space-y-5"
+              >
                 {/* Email */}
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-200">
@@ -254,7 +289,11 @@ export default function LoginForm() {
                     <LockKeyhole className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
 
                     <input
-                      type={showPassword ? "text" : "password"}
+                      type={
+                        showPassword
+                          ? "text"
+                          : "password"
+                      }
                       required
                       autoComplete="current-password"
                       value={password}
@@ -273,7 +312,9 @@ export default function LoginForm() {
                           : "Show password"
                       }
                       onClick={() =>
-                        setShowPassword((current) => !current)
+                        setShowPassword(
+                          (current) => !current
+                        )
                       }
                       className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 transition hover:text-white"
                     >
