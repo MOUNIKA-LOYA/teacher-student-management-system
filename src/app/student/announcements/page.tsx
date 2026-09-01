@@ -91,7 +91,7 @@ export default function StudentAnnouncementsPage() {
         );
 
         setError(
-          "Something went wrong while loading announcements."
+          "Something went wrongg while loading announcements."
         );
       } finally {
         setLoading(false);
@@ -242,7 +242,7 @@ export default function StudentAnnouncementsPage() {
 
                                 <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-cyan-300">
                                   {announcement.target_role ===
-                                  "all"
+                                    "all"
                                     ? "Everyone"
                                     : "Students"}
                                 </span>
